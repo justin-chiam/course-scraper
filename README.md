@@ -1,1 +1,1 @@
-# cs50p-final-project
+# course-scraper
