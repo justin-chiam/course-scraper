@@ -447,7 +447,7 @@ def print_handbook_result(
     print("-" * 83)
     print_wrapped_section(overview, 83)
 
-    print("CONDITIONS FOR ENROLMENT")
+    print("\nCONDITIONS FOR ENROLMENT")
     print("-" * 83)
     print_wrapped_section(conditions, 83)
 
