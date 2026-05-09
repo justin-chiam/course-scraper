@@ -281,6 +281,17 @@ def main():
         print("No courses found for that level.")
         sys.exit(0)
 
+    course_options = [f"{course.code} - {course.title} ({course.uoc} UOC)" for course in filtered_courses]
+    selected_course_text = choose_from_list("Courses", course_options)
+    selected_course_code = selected_course_text.split(" - ", 1)[0]
+    selected_course = None
+    for course in filtered_courses:
+        if course.code == selected_course_code:
+            selected_course = course
+            break
+    
+   
+
 
 if __name__ == "__main__":
     main()
