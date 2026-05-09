@@ -2,6 +2,7 @@ from datetime import date
 import re
 import requests
 import sys
+import textwrap
 from pyfiglet import Figlet
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -393,6 +394,21 @@ def extract_handbook_details(course_code, level):
     return handbook_url, overview, conditions
 
 
+def print_wrapped_section(text, width):
+    paragraphs = text.split("\n")
+
+    for paragraph in paragraphs:
+        paragraph = paragraph.strip()
+
+        if not paragraph:
+            print()
+        elif paragraph.startswith("- "):
+            print(textwrap.fill(paragraph, width=width, subsequent_indent=" "))
+        else:
+            print(textwrap.fill(paragraph, width=width))
+            print()
+
+
 def main():
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
     print(
@@ -466,11 +482,11 @@ def main():
 
     print("\nOVERVIEW")
     print("-" * 83)
-    print(overview)
+    print_wrapped_section(overview, 83)
 
     print("\nCONDITIONS FOR ENROLMENT")
     print("-" * 83)
-    print(conditions + "\n")
+    print_wrapped_section(conditions + "\n", 83)
 
 
 if __name__ == "__main__":
