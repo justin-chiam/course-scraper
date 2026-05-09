@@ -166,7 +166,7 @@ def extract_subject_areas():
 
         name = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
         offered_by = cells[-1]
-        url = TIMETABLE_BASE + href
+        url = TIMETABLE_BASE + "/" + href
         faculty = classify_faculty(offered_by)
 
         subjects.append(SubjectArea(code=code, name=name, offered_by=offered_by, faculty=faculty, url=url))
@@ -207,12 +207,40 @@ def extract_courses(subject, level):
 
         title = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
         uoc = cells[-1]
-        url = TIMETABLE_BASE + links[0]["href"]
+        url = TIMETABLE_BASE + "/" + links[0]["href"]
         courses.append(Course(code=code, title=title, uoc=uoc, url=url))
     
     return courses
-        
 
+def get_course_level(course_code):
+    """Return the course level based on the first digit in the course code."""
+    match = re.fullmatch(r"[A-Z]{4}(\d)\d{3}", course_code)
+    if not match:
+        return "Other"
+    return f"Level {match.group(1)}"
+
+def filter_courses_by_level(courses):
+    """Ask the user which course level they want, then return courses under that course level"""
+    available_levels = sorted(
+        set(get_course_level(course.code) for course in courses),
+        key=lambda level: int(level.split()[1]) if level.startswith("Level ") else -1,
+    )
+
+    level_options = []
+    for course_level in available_levels:
+        count = sum(1 for course in courses if get_course_level(course.code))
+        level_options.append(f"{course_level} courses ({count})")
+    
+    # Add another option to list all courses within the subject area
+    level_options.append(f"All levels ({len(courses)})")
+
+    selected_level_text = choose_from_list("Course level within this subject area", level_options)
+
+    if selected_level_text.startswith("All levels"):
+        return courses
+    
+    selected_level = selected_level_text.split(" courses", 1)[0]
+    return [course for course in courses if get_course_level(course.code) == selected_level]
 
 def main():
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
@@ -247,17 +275,11 @@ def main():
     if not courses:
         print(f"No {level} courses found for {selected_subject.code}.")
         sys.exit(0)
-    
-    
 
-
-
-
-
-
-
-
-
+    filtered_courses = filter_courses_by_level(courses)
+    if not filtered_courses:
+        print("No courses found for that level.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
