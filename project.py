@@ -7,14 +7,16 @@ from pyfiglet import Figlet
 from bs4 import BeautifulSoup
 
 YEAR = date.today().year
-TIMETABLE = f"https://timetable.unsw.edu.au/{YEAR}/subjectSearch.html"
+TIMETABLE_BASE = f"https://timetable.unsw.edu.au/{YEAR}"
+TIMETABLE = TIMETABLE_BASE + "/subjectSearch.html"
+
 HANDBOOK = "https://www.handbook.unsw.edu.au"
 
 class SubjectArea:
-    def __init__(self, code, name, school, faculty, url):
+    def __init__(self, code, name, offered_by, faculty, url):
         self.code = code
         self.name = name
-        self.school = school
+        self.offered_by = offered_by
         self.faculty = faculty
         self.url = url
 
@@ -25,7 +27,7 @@ class Course:
         self.uoc = uoc
         self.url = url
 
-FACULTY_KEYWORDS = {
+FACULTIES = {
     "Arts, Design & Architecture": [
         "Architectural Studies Program",
         "Building Construction Mgt Prog",
@@ -100,7 +102,7 @@ FACULTY_KEYWORDS = {
         "UC Science",
         "UNSW Canberra at ADFA",
         "UNSW College Diplomas",
-    ],
+    ]
 }
 
 def fetch_soup(url):
@@ -109,7 +111,11 @@ def fetch_soup(url):
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
 
+def clean_text(text):
+    return re.sub(r"\s+", " ", text).strip()
+
 def choose_from_list(title, options):
+    """Print numbered options and ask the user to choose one."""
     if not options:
         raise ValueError(f"No options available for {title}")
     
@@ -125,12 +131,67 @@ def choose_from_list(title, options):
                 return options[idx - 1]
         print("Invalid selection. Try again.")
 
+def classify_faculty(offered_by):
+    """Find the main faculty from the timetable "Offered by" text."""
+    offered_by = offered_by.lower()
+    for faculty, keywords in FACULTIES.items():
+        for keyword in keywords:
+            if keyword.lower() in offered_by:
+                return faculty
+    return "Other / Unclassified"
+
+def extract_subject_areas():
+    """Scrape subject areas from main timetable page."""
+    soup = fetch_soup(TIMETABLE)
+    subjects = []
+
+    # Timetable page is table-based. Useful rows contain:
+    # Course code (with link), subject area (with link), "offered-by" text
+    for row in soup.find_all("tr"):
+        cells = [clean_text(cell.get_text(" ", strip="True")) for cell in row.find_all("td")]
+        if len(cells) < 3:
+            continue
+
+        links = row.find_all("a", href=True)
+        if not links:
+            continue
+
+        code = clean_text(links[0].get_text(" ", strip=True))
+        if not re.fullmatch(r"[A-Z]{4}", code):
+            continue
+
+        href = links[0]["href"]
+        if ".html" not in href:
+            continue
+
+        name = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
+        offered_by = cells[-1]
+        url = TIMETABLE_BASE + href
+        faculty = classify_faculty(offered_by)
+
+        subjects.append(SubjectArea(code=code, name=name, offered_by=offered_by, faculty=faculty, url=url))
+
+    return subjects
+        
+
 
 def main():
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
     print("This scraper uses the UNSW timetable page to find courses and the UNSW Handbook for details.")
 
     level = choose_from_list("Degree level", ["Undergraduate", "Postgraduate"])
+
+    print("\nLoading main faculties...")
+    faculties = list(FACULTIES.keys())
+    selected_faculty = choose_from_list("Main faculty", faculties)
+
+    subjects = extract_subject_areas()
+    if not subjects:
+        print("No subject areas found. Timetable page may have changed.")
+        sys.exit(1)
+    faculty_subjects = list(subject for subject in subjects if subject.faculty == selected_faculty)
+    schools = sorted(set(subject.offered_by for subject in faculty_subjects))
+    selected_school = choose_from_list("School", schools)
 
 
 
