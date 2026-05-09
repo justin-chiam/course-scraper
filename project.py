@@ -3,8 +3,8 @@ import re
 import requests
 import sys
 from pyfiglet import Figlet
-
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 YEAR = date.today().year
 TIMETABLE_BASE = f"https://timetable.unsw.edu.au/{YEAR}"
@@ -105,6 +105,41 @@ FACULTIES = {
     ]
 }
 
+EXTRACT_HANDBOOK_SECTION_JS = """
+(startHeadings) => {
+    const cleanHeading = (text) => text
+        .split("\\n")[0]
+        .replace(/\\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    const wanted = new Set(startHeadings.map(cleanHeading));
+
+    for (const heading of document.querySelectorAll("h3")) {
+        if (!wanted.has(cleanHeading(heading.innerText))) {
+            continue;
+        }
+
+        const card = heading.parentElement?.parentElement;
+        if (!card) {
+            continue;
+        }
+
+        const lines = card.innerText
+            .split("\\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        if (lines.length && wanted.has(cleanHeading(lines[0]))) {
+            lines.shift();
+        }
+
+        return lines.join("\\n");
+    }
+
+    return null;
+}
+"""
+
 def fetch_soup(url):
     """Fetch a page from a URL and return BeautifulSoup."""
     response = requests.get(url, timeout=30)
@@ -124,6 +159,7 @@ def choose_from_list(title, options):
         print(f"{i}. {option}")
 
     while True:
+        print("")
         choice = input("Select: ").strip()
         if choice.isdigit():
             idx = int(choice)
@@ -148,7 +184,7 @@ def extract_subject_areas():
     # Timetable page is table-based. Useful rows contain:
     # Course code (with link), subject area (with link), "offered-by" text
     for row in soup.find_all("tr"):
-        cells = [clean_text(cell.get_text(" ", strip="True")) for cell in row.find_all("td")]
+        cells = [clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
         if len(cells) < 3:
             continue
 
@@ -207,6 +243,8 @@ def extract_courses(subject, level):
 
         title = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
         uoc = cells[-1]
+        if not re.fullmatch(r"\d+", uoc):
+            continue
         url = TIMETABLE_BASE + "/" + links[0]["href"]
         courses.append(Course(code=code, title=title, uoc=uoc, url=url))
     
@@ -228,7 +266,7 @@ def filter_courses_by_level(courses):
 
     level_options = []
     for course_level in available_levels:
-        count = sum(1 for course in courses if get_course_level(course.code))
+        count = sum(1 for course in courses if get_course_level(course.code) == course_level)
         level_options.append(f"{course_level} courses ({count})")
     
     # Add another option to list all courses within the subject area
@@ -241,6 +279,82 @@ def filter_courses_by_level(courses):
     
     selected_level = selected_level_text.split(" courses", 1)[0]
     return [course for course in courses if get_course_level(course.code) == selected_level]
+
+def expand_handbook_content(page):
+    """Click "Read More" button on handbook page so extracted text includes full sections."""
+    for _ in range(5):
+        read_more = page.get_by_text("Read More", exact=True).first
+        try:
+            if read_more.count() == 0 or not read_more.is_visible(timeout=1000):
+                break
+            read_more.click(timeout=3000)
+            page.wait_for_timeout(300)
+        except Exception:
+            break
+
+def format_section_lines(lines):
+    """Format handbook section lines with line breaks and bullet points."""
+    formatted_lines = []
+    in_list = False
+
+    for index, line in enumerate(lines):
+        previous_line = lines[index - 1] if index > 0 else ""
+
+        if previous_line.endswith(":"):
+            in_list = True
+        
+        if in_list:
+            formatted_lines.append(f"- {line}")
+        else:
+            formatted_lines.append(line)
+
+    return formatted_lines
+
+def extract_section(page, start_headings):
+    """Extract a section from the rendered handbook page."""
+    section_text = page.evaluate(EXTRACT_HANDBOOK_SECTION_JS, start_headings)
+    if not section_text:
+        return None
+    
+    section_lines = [
+        line.strip()
+        for line in section_text.splitlines()
+        if line.strip()
+        and "For more content click the Read More button below" not in line
+        and line.strip() != "Read More"
+        and not line.strip().lower().startswith("about ")
+    ]
+
+    cleaned_lines = [clean_text(line) for line in section_lines]
+    formatted_lines = format_section_lines(cleaned_lines)
+    result = "\n".join(formatted_lines)
+    return result if result else None
+
+def extract_handbook_details(course_code, level):
+    """Return handbook URL, overview text and enrolment conditions/prerequisites text."""
+    handbook_url = f"{HANDBOOK}/{level}/courses/{YEAR}/{course_code}"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(handbook_url, wait_until="networkidle", timeout=60000)
+
+        page.wait_for_selector("text=Overview", timeout=30000)
+        expand_handbook_content(page)
+
+        overview = extract_section(page, ["Overview"])
+        conditions = extract_section(page, ["Conditions for Enrolment"])
+
+        browser.close()
+    
+    if not overview:
+        overview = "Overview not found on Handbook page."
+    
+    if not conditions:
+        conditions = "No conditions for enrolment found on Handbook page."
+
+    return handbook_url, overview, conditions
+
 
 def main():
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
@@ -290,7 +404,23 @@ def main():
             selected_course = course
             break
     
-   
+    # Scraping handbook
+    print(f"\nOpening Handbook page for {selected_course.code}...")
+    handbook_url, overview, conditions = extract_handbook_details(selected_course.code, level)
+
+    print("\n" + "=" * 83)
+    print(f"{selected_course.code} - {selected_course.title}")
+    print(f"Timetable URL: {selected_course.url}")
+    print(f"Handbook URL:  {handbook_url}")
+    print("=" * 83)
+
+    print("\nOVERVIEW")
+    print("-" * 83)
+    print(overview)
+
+    print("\nCONDITIONS FOR ENROLMENT")
+    print("-" * 83)
+    print(conditions + "\n")
 
 
 if __name__ == "__main__":
