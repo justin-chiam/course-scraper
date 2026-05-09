@@ -12,6 +12,7 @@ TIMETABLE = TIMETABLE_BASE + "/subjectSearch.html"
 
 HANDBOOK = "https://www.handbook.unsw.edu.au"
 
+
 class SubjectArea:
     def __init__(self, code, name, offered_by, faculty, url):
         self.code = code
@@ -20,12 +21,14 @@ class SubjectArea:
         self.faculty = faculty
         self.url = url
 
+
 class Course:
     def __init__(self, code, title, uoc, url):
         self.code = code
         self.title = title
         self.uoc = uoc
         self.url = url
+
 
 FACULTIES = {
     "Arts, Design & Architecture": [
@@ -102,7 +105,7 @@ FACULTIES = {
         "UC Science",
         "UNSW Canberra at ADFA",
         "UNSW College Diplomas",
-    ]
+    ],
 }
 
 EXTRACT_HANDBOOK_SECTION_JS = """
@@ -140,20 +143,23 @@ EXTRACT_HANDBOOK_SECTION_JS = """
 }
 """
 
+
 def fetch_soup(url):
     """Fetch a page from a URL and return BeautifulSoup."""
     response = requests.get(url, timeout=30)
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
 
+
 def clean_text(text):
     return re.sub(r"\s+", " ", text).strip()
+
 
 def choose_from_list(title, options):
     """Print numbered options and ask the user to choose one."""
     if not options:
         raise ValueError(f"No options available for {title}")
-    
+
     print(f"\n{title}")
     for i, option in enumerate(options, start=1):
         print(f"{i}. {option}")
@@ -167,6 +173,7 @@ def choose_from_list(title, options):
                 return options[idx - 1]
         print("Invalid selection. Try again.")
 
+
 def classify_faculty(offered_by):
     """Find the main faculty from the timetable "Offered by" text."""
     offered_by = offered_by.lower()
@@ -176,6 +183,7 @@ def classify_faculty(offered_by):
                 return faculty
     return "Other / Unclassified"
 
+
 def extract_subject_areas():
     """Scrape subject areas from main timetable page."""
     soup = fetch_soup(TIMETABLE)
@@ -184,7 +192,9 @@ def extract_subject_areas():
     # Timetable page is table-based. Useful rows contain:
     # Course code (with link), subject area (with link), "offered-by" text
     for row in soup.find_all("tr"):
-        cells = [clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
+        cells = [
+            clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")
+        ]
         if len(cells) < 3:
             continue
 
@@ -200,14 +210,23 @@ def extract_subject_areas():
         if ".html" not in href:
             continue
 
-        name = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
+        name = (
+            clean_text(links[1].get_text(" ", strip=True))
+            if len(links) > 1
+            else cells[1]
+        )
         offered_by = cells[-1]
         url = TIMETABLE_BASE + "/" + href
         faculty = classify_faculty(offered_by)
 
-        subjects.append(SubjectArea(code=code, name=name, offered_by=offered_by, faculty=faculty, url=url))
+        subjects.append(
+            SubjectArea(
+                code=code, name=name, offered_by=offered_by, faculty=faculty, url=url
+            )
+        )
 
     return subjects
+
 
 def extract_courses(subject, level):
     """Scrape courses from a specific subject area page for either undergraduate or postgraduate."""
@@ -228,8 +247,10 @@ def extract_courses(subject, level):
 
         if not in_level_section:
             continue
-        
-        cells = [clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
+
+        cells = [
+            clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")
+        ]
         if len(cells) < 3:
             continue
 
@@ -241,14 +262,19 @@ def extract_courses(subject, level):
         if not re.fullmatch(r"[A-Z]{4}\d{4}", code):
             continue
 
-        title = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
+        title = (
+            clean_text(links[1].get_text(" ", strip=True))
+            if len(links) > 1
+            else cells[1]
+        )
         uoc = cells[-1]
         if not re.fullmatch(r"\d+", uoc):
             continue
         url = TIMETABLE_BASE + "/" + links[0]["href"]
         courses.append(Course(code=code, title=title, uoc=uoc, url=url))
-    
+
     return courses
+
 
 def get_course_level(course_code):
     """Return the course level based on the first digit in the course code."""
@@ -256,6 +282,7 @@ def get_course_level(course_code):
     if not match:
         return "Other"
     return f"Level {match.group(1)}"
+
 
 def filter_courses_by_level(courses):
     """Ask the user which course level they want, then return courses under that course level"""
@@ -266,19 +293,26 @@ def filter_courses_by_level(courses):
 
     level_options = []
     for course_level in available_levels:
-        count = sum(1 for course in courses if get_course_level(course.code) == course_level)
+        count = sum(
+            1 for course in courses if get_course_level(course.code) == course_level
+        )
         level_options.append(f"{course_level} courses ({count})")
-    
+
     # Add another option to list all courses within the subject area
     level_options.append(f"All levels ({len(courses)})")
 
-    selected_level_text = choose_from_list("Course level within this subject area", level_options)
+    selected_level_text = choose_from_list(
+        "Course level within this subject area", level_options
+    )
 
     if selected_level_text.startswith("All levels"):
         return courses
-    
+
     selected_level = selected_level_text.split(" courses", 1)[0]
-    return [course for course in courses if get_course_level(course.code) == selected_level]
+    return [
+        course for course in courses if get_course_level(course.code) == selected_level
+    ]
+
 
 def expand_handbook_content(page):
     """Click "Read More" button on handbook page so extracted text includes full sections."""
@@ -292,6 +326,7 @@ def expand_handbook_content(page):
         except Exception:
             break
 
+
 def format_section_lines(lines):
     """Format handbook section lines with line breaks and bullet points."""
     formatted_lines = []
@@ -302,7 +337,7 @@ def format_section_lines(lines):
 
         if previous_line.endswith(":"):
             in_list = True
-        
+
         if in_list:
             formatted_lines.append(f"- {line}")
         else:
@@ -310,12 +345,13 @@ def format_section_lines(lines):
 
     return formatted_lines
 
+
 def extract_section(page, start_headings):
     """Extract a section from the rendered handbook page."""
     section_text = page.evaluate(EXTRACT_HANDBOOK_SECTION_JS, start_headings)
     if not section_text:
         return None
-    
+
     section_lines = [
         line.strip()
         for line in section_text.splitlines()
@@ -329,6 +365,7 @@ def extract_section(page, start_headings):
     formatted_lines = format_section_lines(cleaned_lines)
     result = "\n".join(formatted_lines)
     return result if result else None
+
 
 def extract_handbook_details(course_code, level):
     """Return handbook URL, overview text and enrolment conditions/prerequisites text."""
@@ -346,10 +383,10 @@ def extract_handbook_details(course_code, level):
         conditions = extract_section(page, ["Conditions for Enrolment"])
 
         browser.close()
-    
+
     if not overview:
         overview = "Overview not found on Handbook page."
-    
+
     if not conditions:
         conditions = "No conditions for enrolment found on Handbook page."
 
@@ -358,7 +395,9 @@ def extract_handbook_details(course_code, level):
 
 def main():
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
-    print("This scraper uses the UNSW timetable page to find courses and the UNSW Handbook for details.")
+    print(
+        "This scraper uses the UNSW timetable page to find courses and the UNSW Handbook for details."
+    )
 
     level = choose_from_list("Degree level", ["Undergraduate", "Postgraduate"])
 
@@ -370,12 +409,18 @@ def main():
     if not subjects:
         print("No subject areas found. Timetable page may have changed.")
         sys.exit(1)
-    faculty_subjects = [subject for subject in subjects if subject.faculty == selected_faculty]
+    faculty_subjects = [
+        subject for subject in subjects if subject.faculty == selected_faculty
+    ]
     schools = sorted(set(subject.offered_by for subject in faculty_subjects))
     selected_school = choose_from_list("School", schools)
 
-    school_subjects = [subject for subject in faculty_subjects if subject.offered_by == selected_school]
-    subject_options = [f"{subject.code} - {subject.name}" for subject in school_subjects]
+    school_subjects = [
+        subject for subject in faculty_subjects if subject.offered_by == selected_school
+    ]
+    subject_options = [
+        f"{subject.code} - {subject.name}" for subject in school_subjects
+    ]
     selected_subject_text = choose_from_list("Subject areas", subject_options)
     selected_subject_code = selected_subject_text.split(" - ")[0]
     selected_subject = None
@@ -383,7 +428,7 @@ def main():
         if subject.code == selected_subject_code:
             selected_subject = subject
             break
-    
+
     print(f"\nLoading {level} courses for {selected_subject.code} subject area...")
     courses = extract_courses(selected_subject, level)
     if not courses:
@@ -395,7 +440,10 @@ def main():
         print("No courses found for that level.")
         sys.exit(0)
 
-    course_options = [f"{course.code} - {course.title} ({course.uoc} UOC)" for course in filtered_courses]
+    course_options = [
+        f"{course.code} - {course.title} ({course.uoc} UOC)"
+        for course in filtered_courses
+    ]
     selected_course_text = choose_from_list("Courses", course_options)
     selected_course_code = selected_course_text.split(" - ", 1)[0]
     selected_course = None
@@ -403,10 +451,12 @@ def main():
         if course.code == selected_course_code:
             selected_course = course
             break
-    
+
     # Scraping handbook
     print(f"\nOpening Handbook page for {selected_course.code}...")
-    handbook_url, overview, conditions = extract_handbook_details(selected_course.code, level)
+    handbook_url, overview, conditions = extract_handbook_details(
+        selected_course.code, level
+    )
 
     print("\n" + "=" * 83)
     print(f"{selected_course.code} - {selected_course.title}")
