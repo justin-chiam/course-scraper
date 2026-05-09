@@ -172,6 +172,45 @@ def extract_subject_areas():
         subjects.append(SubjectArea(code=code, name=name, offered_by=offered_by, faculty=faculty, url=url))
 
     return subjects
+
+def extract_courses(subject, level):
+    """Scrape courses from a specific subject area page for either undergraduate or postgraduate."""
+    soup = fetch_soup(subject.url)
+    courses = []
+    in_level_section = False
+
+    for row in soup.find_all("tr"):
+        text = clean_text(row.get_text(" ", strip=True))
+
+        if text == level:
+            in_level_section = True
+            continue
+
+        if text in ["Undergraduate", "Postgraduate", "Research"] and text != level:
+            in_level_section = False
+            continue
+
+        if not in_level_section:
+            continue
+        
+        cells = [clean_text(cell.get_text(" ", strip=True)) for cell in row.find_all("td")]
+        if len(cells) < 3:
+            continue
+
+        links = row.find_all("a", href=True)
+        if not links:
+            continue
+
+        code = clean_text(links[0].get_text(" ", strip=True))
+        if not re.fullmatch(r"[A-Z]{4}\d{4}", code):
+            continue
+
+        title = clean_text(links[1].get_text(" ", strip=True)) if len(links) > 1 else cells[1]
+        uoc = cells[-1]
+        url = TIMETABLE_BASE + links[0]["href"]
+        courses.append(Course(code=code, title=title, uoc=uoc, url=url))
+    
+    return courses
         
 
 
@@ -203,7 +242,12 @@ def main():
             selected_subject = subject
             break
     
-
+    print(f"\nLoading {level} courses for {selected_subject.code} subject area...")
+    courses = extract_courses(selected_subject, level)
+    if not courses:
+        print(f"No {level} courses found for {selected_subject.code}.")
+        sys.exit(0)
+    
     
 
 
