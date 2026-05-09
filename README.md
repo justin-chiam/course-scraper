@@ -9,3 +9,5 @@ The program allows users to:
 - filter courses by course level (Level 1, Level 2, etc)
 - retrieve course information from the UNSW handbook
 - display the course overview and enrolment conditions/prerequisites
+
+This project is an independent project and is not affiliated with, endorsed by, or maintained by UNSW Sydney.
