@@ -1,6 +1,7 @@
 from datetime import date
 import re
 import requests
+import argparse
 import sys
 import textwrap
 from pyfiglet import Figlet
@@ -10,6 +11,7 @@ from playwright.sync_api import sync_playwright
 YEAR = date.today().year
 TIMETABLE_BASE = f"https://timetable.unsw.edu.au/{YEAR}"
 TIMETABLE = TIMETABLE_BASE + "/subjectSearch.html"
+COURSE_CODE_PATTERN = r"[A-Z]{4}\d{4}"
 
 HANDBOOK = "https://www.handbook.unsw.edu.au"
 
@@ -260,7 +262,7 @@ def extract_courses(subject, level):
             continue
 
         code = clean_text(links[0].get_text(" ", strip=True))
-        if not re.fullmatch(r"[A-Z]{4}\d{4}", code):
+        if not re.fullmatch(COURSE_CODE_PATTERN, code):
             continue
 
         title = (
@@ -369,7 +371,7 @@ def extract_section(page, start_headings):
 
 
 def extract_handbook_details(course_code, level):
-    """Return handbook URL, overview text and enrolment conditions/prerequisites text."""
+    """Return handbook URL, course title, overview text and enrolment conditions/prerequisites text."""
     handbook_url = f"{HANDBOOK}/{level}/courses/{YEAR}/{course_code}"
 
     with sync_playwright() as p:
@@ -380,6 +382,7 @@ def extract_handbook_details(course_code, level):
         page.wait_for_selector("text=Overview", timeout=30000)
         expand_handbook_content(page)
 
+        title = page.locator("h2").first.inner_text(timeout=30000)
         overview = extract_section(page, ["Overview"])
         conditions = extract_section(page, ["Conditions for Enrolment"])
 
@@ -391,7 +394,7 @@ def extract_handbook_details(course_code, level):
     if not conditions:
         conditions = "No conditions for enrolment found on Handbook page."
 
-    return handbook_url, overview, conditions
+    return handbook_url, title, overview, conditions
 
 
 def print_wrapped_section(text, width):
@@ -409,7 +412,68 @@ def print_wrapped_section(text, width):
             print()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Scrape UNSW courses by timetable and handbook."
+    )
+    parser.add_argument(
+        "-c", "--course", help="course code to scrape directly, e.g. COMP2521."
+    )
+    return parser.parse_args()
+
+
+def validate_course_code(course_code):
+    course_code = course_code.strip().upper()
+    if not re.fullmatch(COURSE_CODE_PATTERN, course_code):
+        raise ValueError("Invalid format for course code.")
+    return course_code
+
+
+def get_handbook_level(course_code):
+    first_digit = int(course_code[4])
+    return "Undergraduate" if first_digit < 5 else "Postgraduate"
+
+
+def print_handbook_result(
+    course_code, title, timetable_url, handbook_url, overview, conditions
+):
+    print("\n" + "=" * 83)
+    print(f"{course_code} - {title}")
+    print(f"Timetable URL: {timetable_url}")
+    print(f"Handbook URL:  {handbook_url}")
+    print("=" * 83)
+
+    print("\nOVERVIEW")
+    print("-" * 83)
+    print_wrapped_section(overview, 83)
+
+    print("CONDITIONS FOR ENROLMENT")
+    print("-" * 83)
+    print_wrapped_section(conditions, 83)
+
+
+def run_direct_course_lookup(course_code):
+    course_code = validate_course_code(course_code)
+    level = get_handbook_level(course_code)
+
+    print(f"\nOpening Handbook page for {course_code}...")
+    handbook_url, title, overview, conditions = extract_handbook_details(
+        course_code, level
+    )
+    timetable_url = f"{TIMETABLE_BASE}/{course_code}.html"
+
+    print_handbook_result(
+        course_code, title, timetable_url, handbook_url, overview, conditions
+    )
+
+
 def main():
+    args = parse_args()
+
+    if args.course:
+        run_direct_course_lookup(args.course)
+        return
+
     print(Figlet(font="small").renderText(f"UNSW Course Scraper {YEAR}"))
     print(
         "This scraper uses the UNSW timetable page to find courses and the UNSW Handbook for details."
@@ -470,23 +534,18 @@ def main():
 
     # Scraping handbook
     print(f"\nOpening Handbook page for {selected_course.code}...")
-    handbook_url, overview, conditions = extract_handbook_details(
+    handbook_url, _, overview, conditions = extract_handbook_details(
         selected_course.code, level
     )
 
-    print("\n" + "=" * 83)
-    print(f"{selected_course.code} - {selected_course.title}")
-    print(f"Timetable URL: {selected_course.url}")
-    print(f"Handbook URL:  {handbook_url}")
-    print("=" * 83)
-
-    print("\nOVERVIEW")
-    print("-" * 83)
-    print_wrapped_section(overview, 83)
-
-    print("\nCONDITIONS FOR ENROLMENT")
-    print("-" * 83)
-    print_wrapped_section(conditions + "\n", 83)
+    print_handbook_result(
+        selected_course.code,
+        selected_course.title,
+        selected_course.url,
+        handbook_url,
+        overview,
+        conditions,
+    )
 
 
 if __name__ == "__main__":
