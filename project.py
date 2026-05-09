@@ -189,9 +189,22 @@ def main():
     if not subjects:
         print("No subject areas found. Timetable page may have changed.")
         sys.exit(1)
-    faculty_subjects = list(subject for subject in subjects if subject.faculty == selected_faculty)
+    faculty_subjects = [subject for subject in subjects if subject.faculty == selected_faculty]
     schools = sorted(set(subject.offered_by for subject in faculty_subjects))
     selected_school = choose_from_list("School", schools)
+
+    school_subjects = [subject for subject in faculty_subjects if subject.offered_by == selected_school]
+    subject_options = [f"{subject.code} - {subject.name}" for subject in school_subjects]
+    selected_subject_text = choose_from_list("Subject areas", subject_options)
+    selected_subject_code = selected_subject_text.split(" - ")[0]
+    selected_subject = None
+    for subject in subjects:
+        if subject.code == selected_subject_code:
+            selected_subject = subject
+            break
+    
+
+    
 
 
 
