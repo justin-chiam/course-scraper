@@ -376,7 +376,14 @@ def extract_handbook_details(course_code, level):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            )
+        )
+        page = context.new_page()
         page.goto(handbook_url, wait_until="networkidle", timeout=60000)
 
         page.wait_for_selector("text=Overview", timeout=30000)
